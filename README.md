@@ -20,8 +20,8 @@ Heurist Mesh is an open network of purpose-built AI agents and tools, each speci
 ### Using UV (Recommended)
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/mesh-agent-mcp.git
-cd mesh-agent-mcp
+git clone https://github.com/yourusername/heurist-mesh-agent-mcp.git
+cd heurist-mesh-agent-mcp
 
 # Install the package
 uv pip install -e .
@@ -30,11 +30,11 @@ uv pip install -e .
 ### Using Docker
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/mesh-agent-mcp.git
-cd mesh-agent-mcp
+git clone https://github.com/yourusername/heurist-mesh-agent-mcp.git
+cd heurist-mesh-agent-mcp
 
 # Build the Docker image
-docker build -t mesh-tool-server .
+docker build -t heurist-mesh-agent-mcp .
 ```
 ## Usage
 ### Option 1: Run with stdio Transport (for Claude Desktop)
@@ -42,7 +42,7 @@ To use this with Claude Desktop, add the following to your claude_desktop_config
 ```bash
 {
   "mcpServers": {
-    "mesh-agent": {
+    "heurist-mesh-agent": {
       "command": "uv",
       "args": [
         "--directory",
@@ -61,6 +61,10 @@ Replace /path/to/mesh-agent-mcp with the actual path to the repository and your-
 
 ### Option 2: Run with SSE Transport (for Cursor)
 #### Setting up Environment Variables in `.env`
+```bash
+cp .env.example .env
+``
+
 ```bash
 HEURIST_API_KEY=your-api-key-here
 ```
