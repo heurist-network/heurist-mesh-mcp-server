@@ -35,6 +35,3 @@ venv.bak/
 *.swp
 *.swo
 .DS_Store
-
-# Generated files
-mesh_mcp_server/server.py 

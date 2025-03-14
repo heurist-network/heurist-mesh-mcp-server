@@ -60,6 +60,10 @@ To use this with Claude Desktop, add the following to your claude_desktop_config
 Replace /path/to/mesh-agent-mcp with the actual path to the repository and your-api-key-here with your Heurist API key.
 
 ### Option 2: Run with SSE Transport (for Cursor)
+#### Setting up Environment Variables in `.env`
+```bash
+HEURIST_API_KEY=your-api-key-here
+```
 #### Using UV:
 ```bash
 uv run mesh-tool-server --transport sse --port 8000
@@ -68,7 +72,7 @@ uv run mesh-tool-server --transport sse --port 8000
 ```bash
 docker run -p 8000:8000 -e PORT=8000 mesh-tool-server
 ```
-Then, in Cursor, add the MCP Server URL: http://0.0.0.0:8000/sse
+Then, in Cursor, add the MCP Server URL: **http://0.0.0.0:8000/sse**
 
 ## Available tools
 | Tool Name | Description | Agent | Parameters | Required Params |
@@ -89,6 +93,22 @@ Then, in Cursor, add the MCP Server URL: http://0.0.0.0:8000/sse
 | execute_search | Execute a web search query by reading the web pages | FirecrawlSearchAgent | **search_term** (string): The search term to execute | search_term |
 | generate_queries | Generate related search queries for a topic that can expand the research | FirecrawlSearchAgent | **topic** (string): The main topic to research<br>**num_queries** (integer): Number of queries to generate | topic |
 | fetch_security_details | Fetch security details of a blockchain token contract | GoplusAnalysisAgent | **contract_address** (string): The token contract address<br>**chain_id** (['integer', 'string']): The blockchain chain ID or 'solana' for Solana tokens. Supported chains: Ethereum (1), Optimism (10), Cronos (25), BSC (56), Gnosis (100), HECO (128), Polygon (137), Fantom (250), KCC (321), zkSync Era (324), ETHW (10001), FON (201022), Arbitrum (42161), Avalanche (43114), Linea Mainnet (59144), Base (8453), Tron (tron), Scroll (534352), opBNB (204), Mantle (5000), ZKFair (42766), Blast (81457), Manta Pacific (169), Berachain Artio Testnet (80085), Merlin (4200), Bitlayer Mainnet (200901), zkLink Nova (810180), X Layer Mainnet (196), Solana (solana) | contract_address |
+
+## Customizing Supported Agents
+The server comes with a default set of agents. To modify which agents are available:
+1. Open the `server.py` file and locate the `Config` class.
+2. Edit the `DEFAULT_AGENTS` list to add or remove agents listed [at Heurist Metadata](https://mesh.heurist.ai/mesh_agents_metadata.json)
+```python
+DEFAULT_AGENTS = [
+    "CoinGeckoTokenInfoAgent",
+    "DexScreenerTokenInfoAgent",
+    "ElfaTwitterIntelligenceAgent",
+    "ExaSearchAgent",
+    "FirecrawlSearchAgent",
+    "GoplusAnalysisAgent",
+    # Add agents here
+    "NewAgent"
+]
 
 ## License
 This MCP server is licensed under the MIT License. This means you are free to use, modify, and distribute the software, subject to the terms and conditions of the MIT License.
