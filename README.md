@@ -14,6 +14,7 @@ Heurist Mesh is an open network of purpose-built AI agents and tools, each speci
 - Python 3.10 or higher
 - UV package manager (recommended)
 - OR Docker
+- [Get a Heurist API key](https://docs.heurist.ai/protocol-overview/credits) or you can [claim free API credits](https://dev-api-form.heurist.ai/) with invite code "claude"
 
 ## Installation
 ### Using UV (Recommended)
