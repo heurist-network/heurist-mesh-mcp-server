@@ -113,6 +113,7 @@ DEFAULT_AGENTS = [
     # Add agents here
     "NewAgent"
 ]
+```
 
 ## License
 This MCP server is licensed under the MIT License. This means you are free to use, modify, and distribute the software, subject to the terms and conditions of the MIT License.
