@@ -1,9 +1,11 @@
 # Mesh Agent MCP Server
-A Model Context Protocol (MCP) server that connects to Heurist's mesh agent APIs, providing Claude with access to various blockchain and web3 research tools.
+A Model Context Protocol (MCP) server that connects to [Heurist Mesh](https://github.com/heurist-network/heurist-agent-framework/tree/main/mesh) APIs, providing Claude with access to various blockchain and web3 tools.
+
+Heurist Mesh is an open network of purpose-built AI agents and tools, each specialized in particular web3 domains such as blockchain data analysis, smart contract security, token metrics, and blockchain interaction. We are actively growing the Heurist Mesh ecosystem, continuously integrating more tools to expand its capabilities.
 
 ## Features
-- Connects to the Heurist mesh agent API
-- Dynamically loads tools from multiple agents
+- Connects to the Heurist Mesh API 
+- Loads tools for cryptocurrency data and Web3 use cases
 - Supports both SSE and stdio transports
 - Works with Claude in Cursor, Claude Desktop, and other MCP-compatible interfaces
 
