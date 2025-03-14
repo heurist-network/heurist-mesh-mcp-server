@@ -46,7 +46,7 @@ To use this with Claude Desktop, add the following to your claude_desktop_config
       "command": "uv",
       "args": [
         "--directory",
-        "/path/to/mesh-agent-mcp",  // Update this path
+        "/path/to/heurist-mesh-mcp-server/mesh_mcp_server",  // Update this path
         "run",
         "mesh-tool-server"
       ],
