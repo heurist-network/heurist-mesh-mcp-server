@@ -8,6 +8,8 @@ Heurist Mesh is an open network of purpose-built AI agents and tools, each speci
 - Loads tools for cryptocurrency data and Web3 use cases
 - Supports both SSE and stdio transports
 - Works with Claude in Cursor, Claude Desktop, and other MCP-compatible interfaces
+- Use one API key to access multiple services (e.g. CoinGecko crypto market data, GoPlus token security review)
+- Hosted SSE endpoint coming soon! Follow [X: @heurist_ai](https://x.com/heurist_ai) for updates.
 
 ## Prerequisites
 
