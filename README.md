@@ -36,12 +36,12 @@ git clone https://github.com/yourusername/heurist-mesh-agent-mcp.git
 cd heurist-mesh-agent-mcp
 
 # Build the Docker image
-docker build -t heurist-mesh-agent-mcp .
+docker build -t mesh-tool-server .
 ```
 ## Usage
 ### Option 1: Run with stdio Transport (for Claude Desktop)
 #### Using UV
-To use this with Claude Desktop, add the following to your claude_desktop_config.json:
+To use this with Claude Desktop, add the following to your `claude_desktop_config.json`:
 ```bash
 {
   "mcpServers": {
@@ -61,7 +61,7 @@ To use this with Claude Desktop, add the following to your claude_desktop_config
 }
 ```
 #### Using Docker
-Alternatively, you can use Docker with Claude Desktop by adding this to your claude_desktop_config.json:
+Alternatively, you can use Docker with Claude Desktop by adding this to your `claude_desktop_config.json`:
 ```bash
 {
   "mcpServers": {
@@ -80,7 +80,7 @@ Alternatively, you can use Docker with Claude Desktop by adding this to your cla
 }
 ```
 
-Replace /path/to/mesh-agent-mcp with the actual path to the repository and your-api-key-here with your Heurist API key.
+Replace `/path/to/mesh-agent-mcp` with the actual path to the repository and `your-api-key-here` with your Heurist API key.
 
 ### Option 2: Run with SSE Transport (for Cursor)
 #### Setting up Environment Variables in `.env`
