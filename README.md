@@ -65,9 +65,6 @@ Replace /path/to/mesh-agent-mcp with the actual path to the repository and your-
 #### Setting up Environment Variables in `.env`
 ```bash
 cp .env.example .env
-``
-
-```bash
 HEURIST_API_KEY=your-api-key-here
 ```
 #### Using UV:
