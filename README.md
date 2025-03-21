@@ -9,7 +9,11 @@ Heurist Mesh is an open network of purpose-built AI agents and tools, each speci
 - Supports both SSE and stdio transports
 - Works with Claude in Cursor, Claude Desktop, and other MCP-compatible interfaces
 - Use one API key to access multiple services (e.g. CoinGecko crypto market data, GoPlus token security review)
-- Hosted SSE endpoint coming soon! Follow [X: @heurist_ai](https://x.com/heurist_ai) for updates.
+
+## Hosted SSE Endpoint (Alpha Release)
+We provide a hosted SSE endpoint at https://sequencer-v2.heurist.xyz/mcp/sse. This includes all the tools from the following commonly used agents: CoingeckoTokenInfoAgent, ElfaTwitterIntelligenceAgent, ExaSearchAgent, DexScreenerTokenInfoAgent, ZerionWalletAnalysisAgent. This is a shared server and the performance may be unstable.
+
+Cursor can directly access SSE servers. For Claude Desktop users, we recommend installing [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy) to connect to the SSE server.
 
 ## Prerequisites
 
