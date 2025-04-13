@@ -13,7 +13,10 @@ Heurist Mesh is an open network of purpose-built AI agents and tools, each speci
 - Works with Claude in Cursor, Claude Desktop, and other MCP-compatible interfaces
 - Use one API key to access multiple services (e.g. CoinGecko crypto market data, GoPlus token security review)
 
-## Hosted SSE Endpoint (Alpha Release)
+## 🔥 Just In: Customize Your Agents and Create Managed MCP Servers On-Demand
+You can use [Heurist Mesh MCP Provisioner](https://mcp.heurist.ai/) to create SSE MCP Servers. Select your agents and compose a personalized swarm for your tasks!
+
+## Hosted SSE Endpoint
 We provide a hosted SSE endpoint at https://sequencer-v2.heurist.xyz/mcp/sse. This includes all the tools from the following commonly used agents: CoingeckoTokenInfoAgent, ElfaTwitterIntelligenceAgent, ExaSearchAgent, DexScreenerTokenInfoAgent, ZerionWalletAnalysisAgent. This is a shared server and the performance may be unstable.
 
 Cursor can directly access SSE servers. For Claude Desktop users, we recommend installing [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy) to connect to the SSE server.
@@ -105,7 +108,10 @@ docker run -p 8000:8000 -e PORT=8000 mesh-tool-server
 ```
 Then, in Cursor, add the MCP Server URL: **http://0.0.0.0:8000/sse**
 
-## Available tools
+## Available Tools
+Visit https://mesh.heurist.ai/metadata.json or https://mcp.heurist.ai/ to view all available tools.
+
+## Featured tools
 | Tool Name | Description | Agent | Parameters | Required Params |
 |-----------|-------------|-------|------------|----------------|
 | get_coingecko_id | Search for a token by name to get its CoinGecko ID | CoinGeckoTokenInfoAgent | **token_name** (string): The token name to search for | token_name |
@@ -128,7 +134,7 @@ Then, in Cursor, add the MCP Server URL: **http://0.0.0.0:8000/sse**
 ## Customizing Supported Agents
 The server comes with a default set of agents. To modify which agents are available:
 1. Open the `server.py` file and locate the `Config` class.
-2. Edit the `DEFAULT_AGENTS` list to add or remove agents listed [at Heurist Metadata](https://mesh.heurist.ai/mesh_agents_metadata.json)
+2. Edit the `DEFAULT_AGENTS` list to add or remove agents listed [at Heurist Metadata](https://mesh.heurist.ai/metadata.json)
 ```python
 DEFAULT_AGENTS = [
     "CoinGeckoTokenInfoAgent",
