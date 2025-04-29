@@ -14,7 +14,7 @@ Heurist Mesh is an open network of purpose-built AI agents and tools, each speci
 - Use one API key to access multiple services (e.g. CoinGecko crypto market data, GoPlus token security review)
 
 ## 🔥 Just In: Customize Your Agents and Create Managed MCP Servers On-Demand
-You can use [Heurist Mesh MCP Provisioner](https://mcp.heurist.ai/) to create SSE MCP Servers. Select your agents and compose a personalized swarm for your tasks!
+You can use [Heurist Mesh MCP Portal](https://mcp.heurist.ai/) to create SSE MCP Servers. Select your agents and compose a personalized swarm for your tasks!
 
 ## Hosted SSE Endpoint
 We provide a hosted SSE endpoint at https://sequencer-v2.heurist.xyz/mcp/sse. This includes all the tools from the following commonly used agents: CoingeckoTokenInfoAgent, ElfaTwitterIntelligenceAgent, ExaSearchAgent, DexScreenerTokenInfoAgent, ZerionWalletAnalysisAgent. This is a shared server and the performance may be unstable.
@@ -32,8 +32,8 @@ Cursor can directly access SSE servers. For Claude Desktop users, we recommend i
 ### Using UV (Recommended)
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/heurist-mesh-agent-mcp.git
-cd heurist-mesh-agent-mcp
+git clone https://github.com/heurist-network/heurist-mesh-mcp-server.git
+cd heurist-mesh-mcp-server
 
 # Install the package
 uv pip install -e .
@@ -42,8 +42,8 @@ uv pip install -e .
 ### Using Docker
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/heurist-mesh-agent-mcp.git
-cd heurist-mesh-agent-mcp
+git clone https://github.com/heurist-network/heurist-mesh-mcp-server.git
+cd heurist-mesh-mcp-server
 
 # Build the Docker image
 docker build -t mesh-tool-server .
@@ -90,7 +90,7 @@ Alternatively, you can use Docker with Claude Desktop by adding this to your `cl
 }
 ```
 
-Replace `/path/to/mesh-agent-mcp` with the actual path to the repository and `your-api-key-here` with your Heurist API key.
+Replace `/path/to/heurist-mesh-mcp-server` with the actual path to the repository and `your-api-key-here` with your Heurist API key.
 
 ### Option 2: Run with SSE Transport (for Cursor)
 #### Setting up Environment Variables in `.env`
