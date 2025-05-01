@@ -6,6 +6,10 @@ A Model Context Protocol (MCP) server that connects to [Heurist Mesh](https://gi
 
 Heurist Mesh is an open network of purpose-built AI agents and tools, each specialized in particular web3 domains such as blockchain data analysis, smart contract security, token metrics, and blockchain interaction. We are actively growing the Heurist Mesh ecosystem, continuously integrating more tools to expand its capabilities.
 
+<a href="https://glama.ai/mcp/servers/@heurist-network/heurist-mesh-mcp-server">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@heurist-network/heurist-mesh-mcp-server/badge" alt="Mesh Agent Server MCP server" />
+</a>
+
 ## Features
 - Connects to the Heurist Mesh API 
 - Loads tools for cryptocurrency data and Web3 use cases
