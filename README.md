@@ -21,7 +21,7 @@ Heurist Mesh is an open network of purpose-built AI agents and tools, each speci
 You can use [Heurist Mesh MCP Portal](https://mcp.heurist.ai/) to create SSE MCP Servers. Select your agents and compose a personalized swarm for your tasks!
 
 ## Hosted SSE Endpoint
-We provide a hosted SSE endpoint at https://sequencer-v2.heurist.xyz/mcp/sse. This includes all the tools from the following commonly used agents: CoingeckoTokenInfoAgent, ElfaTwitterIntelligenceAgent, ExaSearchAgent, DexScreenerTokenInfoAgent, ZerionWalletAnalysisAgent. This is a shared server and the performance may be unstable.
+We provide a hosted SSE endpoint at https://sequencer-v2.heurist.xyz/mcp/sse. This includes all the tools from the following commonly used agents: `CoingeckoTokenInfoAgent`, `ElfaTwitterIntelligenceAgent`, `ExaSearchAgent`, `DexScreenerTokenInfoAgent`, `ZerionWalletAnalysisAgent`. This is a shared server and the performance may be unstable.
 
 Cursor can directly access SSE servers. For Claude Desktop users, we recommend installing [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy) to connect to the SSE server.
 
