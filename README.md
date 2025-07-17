@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/heurist-network-heurist-mesh-mcp-server-badge.png)](https://mseep.ai/app/heurist-network-heurist-mesh-mcp-server)
+
 # Mesh Agent MCP Server
 
 ![mesh-2](https://github.com/user-attachments/assets/da67c0e6-0709-4f28-ab82-8abfc0c0734c)
