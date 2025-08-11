@@ -1,0 +1,19 @@
+{
+    "agents": {
+        "CoinGeckoTokenInfoAgent": [
+            "get_token_info",
+            "get_trending_coins"
+        ],
+        "DexScreenerTokenInfoAgent": [
+            "search_pairs"
+        ],
+        "ElfaTwitterIntelligenceAgent": [
+            "get_trending_tokens",
+            "search_account"
+        ],
+        "LetsBonkTokenInfoAgent": [
+            "query_about_to_graduate_tokens",
+            "query_about_to_graduate_tokens"
+        ]
+    }
+}
