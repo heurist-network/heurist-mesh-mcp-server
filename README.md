@@ -10,6 +10,8 @@ Heurist Mesh is an open network of purpose-built AI agents and tools, each speci
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@heurist-network/heurist-mesh-mcp-server/badge" alt="Mesh Agent Server MCP server" />
 </a>
 
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/heurist-network/heurist-mesh-mcp-server)](https://archestra.ai/mcp-catalog/heurist-network__heurist-mesh-mcp-server)
+
 ## Features
 - Connects to the Heurist Mesh API 
 - Loads tools for cryptocurrency data and Web3 use cases
