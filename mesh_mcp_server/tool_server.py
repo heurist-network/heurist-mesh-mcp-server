@@ -1,9 +1,12 @@
 """
 Mesh Tool MCP Server - Connects to mesh API endpoints and provides tools for tool execution.
+Supports fine-grained tool selection per agent via configuration file.
 """
 
+import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import aiohttp
@@ -36,24 +39,11 @@ class Config:
         "MESH_METADATA_ENDPOINT", "https://mesh.heurist.ai/mesh_agents_metadata.json"
     )
 
-    # Default supported agents
-    DEFAULT_AGENTS = [
-        "CoinGeckoTokenInfoAgent",
-        "DexScreenerTokenInfoAgent",
-        "ElfaTwitterIntelligenceAgent",
-        "ExaSearchAgent",
-        "TwitterInfoAgent",
-        "AIXBTProjectInfoAgent",
-        "EtherscanAgent",
-        "EvmTokenInfoAgent",
-        "FundingRateAgent",
-        "UnifaiTokenAnalysisAgent",
-        "YahooFinanceAgent",
-        "ZerionWalletAnalysisAgent"
-    ]
+    # Configuration file path
+    CONFIG_FILE = "config.json"
 
     # Logging
-    LOG_LEVEL = logging.DEBUG
+    LOG_LEVEL = logging.INFO
     LOG_FORMAT = "%(log_color)s%(levelname)s%(reset)s:     %(message)s"
     LOGGER_NAME = "mesh-mcp-tools"
 
@@ -67,6 +57,46 @@ class Config:
         logger.addHandler(handler)
         logger.setLevel(cls.LOG_LEVEL)
         return logger
+
+    @classmethod
+    def load_agent_config(
+        cls, config_path: Optional[str] = None
+    ) -> Dict[str, List[str]]:
+        """Load agent and tool configuration from JSON file.
+
+        Args:
+            config_path: Optional path to config file. If not provided, uses default.
+
+        Returns:
+            Dictionary mapping agent IDs to list of enabled tool names
+
+        Raises:
+            FileNotFoundError: If config file doesn't exist
+            json.JSONDecodeError: If config file is invalid JSON
+        """
+        if config_path is None:
+            # Look for config.json in the same directory as the script
+            script_dir = Path(__file__).parent
+            config_path = script_dir / cls.CONFIG_FILE
+        else:
+            config_path = Path(config_path)
+
+        if not config_path.exists():
+            logger.warning(
+                f"Config file not found at {config_path}, using empty configuration"
+            )
+            return {}
+
+        try:
+            with open(config_path, "r") as f:
+                config_data = json.load(f)
+                return config_data.get("agents", {})
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in config file {config_path}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error loading config file {config_path}: {e}")
+            raise
 
 
 # Configure logger
@@ -126,14 +156,15 @@ async def call_mesh_api(
 class MeshToolServer:
     """Encapsulates the MCP server for mesh agent tools."""
 
-    def __init__(self, supported_agents: Optional[List[str]] = Config.DEFAULT_AGENTS):
+    def __init__(self, config_path: Optional[str] = None):
         """Initialize the server.
 
         Args:
-            supported_agents: List of agent IDs to support, or None for all agents
+            config_path: Optional path to configuration file
         """
         self.tool_registry: Dict[str, Dict[str, Any]] = {}
-        self.supported_agents = supported_agents
+        self.agent_tool_config: Dict[str, List[str]] = {}
+        self.config_path = config_path
         self.server = None
 
     async def fetch_agent_metadata(self) -> Dict[str, Dict[str, Any]]:
@@ -160,30 +191,74 @@ class MeshToolServer:
             logger.error(f"Error fetching agent metadata: {e}")
             raise MeshApiError(f"Failed to fetch agent metadata: {str(e)}") from e
 
+    def is_tool_enabled(self, agent_id: str, tool_name: str) -> bool:
+        """Check if a specific tool is enabled for an agent based on configuration.
+
+        Args:
+            agent_id: The agent ID
+            tool_name: The tool name
+
+        Returns:
+            True if the tool is enabled, False otherwise
+        """
+        if not self.agent_tool_config:
+            # No configuration means all tools are disabled
+            return False
+
+        if agent_id not in self.agent_tool_config:
+            # Agent not in config means it's disabled
+            return False
+
+        agent_tools = self.agent_tool_config[agent_id]
+
+        # Empty list means all tools are enabled for this agent
+        if not agent_tools:
+            return True
+
+        # Check if this specific tool is in the enabled list
+        return tool_name in agent_tools
+
     async def process_tool_metadata(self) -> Dict[str, Dict[str, Any]]:
-        """Process agent metadata and extract tool information.
+        """Process agent metadata and extract tool information based on configuration.
 
         Returns:
             Dictionary mapping tool IDs to tool information
         """
+        # Load configuration
+        self.agent_tool_config = Config.load_agent_config(self.config_path)
+
+        if not self.agent_tool_config:
+            logger.warning("No agents configured in config file")
+            return {}
+
         agents_metadata = await self.fetch_agent_metadata()
         tool_registry = {}
 
-        # Log filtering status
-        if self.supported_agents is not None:
-            logger.info(
-                f"Filtering tools using supported agent list ({len(self.supported_agents)} agents specified)"
-            )
-        else:
-            logger.info("Loading tools from all available agents (no filter applied)")
+        # Log configuration status
+        logger.info(
+            f"Processing tools for {len(self.agent_tool_config)} configured agents"
+        )
+
+        # Track statistics
+        agents_processed = set()
+        tools_enabled = 0
+        tools_skipped = 0
 
         for agent_id, agent_data in agents_metadata.items():
-            # Skip agents not in our supported list (if a list is specified)
-            if (
-                self.supported_agents is not None
-                and agent_id not in self.supported_agents
-            ):
+            # Skip agents not in our configuration
+            if agent_id not in self.agent_tool_config:
                 continue
+
+            agents_processed.add(agent_id)
+            configured_tools = self.agent_tool_config[agent_id]
+
+            # Log agent processing
+            if configured_tools:
+                logger.info(
+                    f"Processing agent {agent_id} with {len(configured_tools)} specific tools"  # noqa: E501
+                )
+            else:
+                logger.info(f"Processing agent {agent_id} with all tools enabled")
 
             # Process tools for this agent
             for tool in agent_data.get("tools", []):
@@ -192,6 +267,14 @@ class MeshToolServer:
                     tool_name = function_data.get("name")
 
                     if not tool_name:
+                        continue
+
+                    # Check if this tool is enabled based on configuration
+                    if not self.is_tool_enabled(agent_id, tool_name):
+                        logger.debug(
+                            f"Skipping tool {tool_name} for agent {agent_id} (not in config)"  # noqa: E501
+                        )
+                        tools_skipped += 1
                         continue
 
                     # Create a unique tool ID
@@ -213,11 +296,19 @@ class MeshToolServer:
                         "description": function_data.get("description", ""),
                         "parameters": parameters,
                     }
+                    tools_enabled += 1
+                    logger.debug(f"Enabled tool: {tool_id}")
 
-        # Log which agents contributed tools
-        agents_with_tools = set(info["agent_id"] for info in tool_registry.values())
-        logger.info(f"Loaded tools from agents: {', '.join(sorted(agents_with_tools))}")
-        logger.info(f"Successfully loaded {len(tool_registry)} tools")
+        # Log summary
+        logger.info("Configuration summary:")
+        logger.info(
+            f"  - Agents processed: {len(agents_processed)} / {len(self.agent_tool_config)} configured"  # noqa: E501
+        )
+        logger.info(f"  - Tools enabled: {tools_enabled}")
+        logger.info(f"  - Tools skipped: {tools_skipped}")
+
+        if agents_processed:
+            logger.info(f"  - Active agents: {', '.join(sorted(agents_processed))}")
 
         return tool_registry
 
@@ -272,7 +363,7 @@ class MeshToolServer:
         self.tool_registry = await self.process_tool_metadata()
         if not self.tool_registry:
             logger.warning(
-                "No tools loaded from metadata. Check the metadata endpoint."
+                "No tools loaded. Check your config.json file and ensure agents/tools are properly configured."  # noqa: E501
             )
         self.server = self._create_server()
         return self.server
@@ -370,7 +461,7 @@ class MeshToolServer:
 
 # ===== CLI Entry Point =====
 @click.command()
-@click.option("--port", default=8580, help="Port to listen on for SSE")
+@click.option("--port", default=8000, help="Port to listen on for SSE")
 @click.option(
     "--transport",
     type=click.Choice(["stdio", "sse"]),
@@ -379,25 +470,25 @@ class MeshToolServer:
 )
 @click.option(
     "--base-path",
-    default="/mcp",
-    help="Base path for URL construction (e.g. setting it to /mcp will make the server available at http://localhost:8580/mcp)",
+    default="",
+    help="Base path for URL construction (e.g. /mcp)",
     is_flag=False,
     flag_value="",
     required=False,
 )
 @click.option(
-    "--all-agents",
-    is_flag=True,
-    help="Load all available agents instead of the default list",
+    "--config",
+    type=click.Path(exists=False),
+    help="Path to configuration file (default: config.json in script directory)",
 )
-def main(port: int, transport: str, base_path: str, all_agents: bool) -> int:
+def main(port: int, transport: str, base_path: str, config: Optional[str]) -> int:
     """Run the Mesh Agent Tools MCP Server.
 
-    Connects to mesh API endpoints and provides tools for tool execution.
+    Connects to mesh API endpoints and provides tools for tool execution
+    with fine-grained control over which tools are enabled per agent.
     """
-    # Create server instance with appropriate agent filtering
-    supported_agents = None if all_agents else Config.DEFAULT_AGENTS
-    server = MeshToolServer(supported_agents=supported_agents)
+    # Create server instance with configuration
+    server = MeshToolServer(config_path=config)
 
     # Run with appropriate transport
     if transport == "sse":
