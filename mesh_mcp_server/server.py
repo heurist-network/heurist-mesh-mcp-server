@@ -42,12 +42,18 @@ class Config:
         "DexScreenerTokenInfoAgent",
         "ElfaTwitterIntelligenceAgent",
         "ExaSearchAgent",
-        "FirecrawlSearchAgent",
-        "GoplusAnalysisAgent",
+        "TwitterInfoAgent",
+        "AIXBTProjectInfoAgent",
+        "EtherscanAgent",
+        "EvmTokenInfoAgent",
+        "FundingRateAgent",
+        "UnifaiTokenAnalysisAgent",
+        "YahooFinanceAgent",
+        "ZerionWalletAnalysisAgent"
     ]
 
     # Logging
-    LOG_LEVEL = logging.INFO
+    LOG_LEVEL = logging.DEBUG
     LOG_FORMAT = "%(log_color)s%(levelname)s%(reset)s:     %(message)s"
     LOGGER_NAME = "mesh-mcp-tools"
 
@@ -364,7 +370,7 @@ class MeshToolServer:
 
 # ===== CLI Entry Point =====
 @click.command()
-@click.option("--port", default=8000, help="Port to listen on for SSE")
+@click.option("--port", default=8580, help="Port to listen on for SSE")
 @click.option(
     "--transport",
     type=click.Choice(["stdio", "sse"]),
@@ -373,8 +379,8 @@ class MeshToolServer:
 )
 @click.option(
     "--base-path",
-    default="",
-    help="Base path for URL construction (e.g. /mcp)",
+    default="/mcp",
+    help="Base path for URL construction (e.g. setting it to /mcp will make the server available at http://localhost:8580/mcp)",
     is_flag=False,
     flag_value="",
     required=False,
