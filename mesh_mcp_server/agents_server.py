@@ -69,7 +69,11 @@ async def call_mesh_api(
         url = f"{MESH_API_ENDPOINT}/mesh_request"
         request_data = {
             "agent_id": agent_id,
-            "input": {"tool_name": tool_name, **tool_params},
+            "input": {
+                "tool": tool_name,
+                "tool_arguments": tool_params,
+                "raw_data_only": True,
+            },
         }
         if "HEURIST_API_KEY" in os.environ:
             request_data["api_key"] = os.environ["HEURIST_API_KEY"]
