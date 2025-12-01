@@ -1,7 +1,8 @@
 import contextlib
+import inspect
 import logging
 import os
-from typing import Any
+from typing import Any, Optional
 
 import aiohttp
 import colorlog
@@ -60,11 +61,17 @@ def fetch_agent_metadata_sync() -> dict[str, dict[str, Any]]:
         return {}
 
 
-async def call_mesh_api(agent_id: str, query: str) -> dict[str, Any]:
-    """Execute an agent query via the mesh API."""
+async def call_mesh_api(agent_id: str, tool_name: str, tool_params: dict[str, Any]) -> dict[str, Any]:
+    """Execute an agent tool via the mesh API."""
     async with aiohttp.ClientSession() as session:
         url = f"{MESH_API_ENDPOINT}/mesh_request"
-        request_data = {"agent_id": agent_id, "input": {"query": query}}
+        request_data = {
+            "agent_id": agent_id,
+            "input": {
+                "tool_name": tool_name,
+                **tool_params
+            }
+        }
         if "HEURIST_API_KEY" in os.environ:
             request_data["api_key"] = os.environ["HEURIST_API_KEY"]
 
@@ -79,31 +86,104 @@ async def call_mesh_api(agent_id: str, query: str) -> dict[str, Any]:
             return await response.json()
 
 
-def create_tool_name(agent_id: str) -> str:
-    """Convert agent ID to a valid tool function name."""
-    name = agent_id.lower()
+def sanitize_tool_name(name: str) -> str:
+    """Convert a tool name to a valid Python function name."""
+    name = name.lower()
     name = "".join(c if c.isalnum() else "_" for c in name)
     name = "_".join(filter(None, name.split("_")))
     if name and name[0].isdigit():
-        name = f"agent_{name}"
+        name = f"tool_{name}"
     return name
 
 
-def make_agent_tool(agent_id: str):
-    """Factory function to create an agent tool with proper closure."""
+def make_agent_tool(agent_id: str, tool_name: str, parameters: dict[str, Any]):
+    """Factory function to create an agent tool with proper closure and dynamic parameters."""
+    properties = parameters.get("properties", {})
+    required_params = parameters.get("required", [])
+    param_names = list(properties.keys())
 
-    async def tool_fn(query: str) -> str:
-        result = await call_mesh_api(agent_id, query)
+    async def tool_fn(**kwargs) -> str:
+        result = await call_mesh_api(agent_id, tool_name, kwargs)
+        return str(result)
+    params = []
+    annotations = {"return": str}
+
+    for param_name, param_def in properties.items():
+        param_type = param_def.get("type", "string")
+        is_required = param_name in required_params
+        type_map = {
+            "string": str,
+            "number": float,
+            "integer": int,
+            "boolean": bool,
+            "array": list,
+            "object": dict,
+        }
+        python_type = type_map.get(param_type, str)
+
+        if is_required:
+            params.append(
+                inspect.Parameter(
+                    param_name,
+                    inspect.Parameter.KEYWORD_ONLY,
+                    default=inspect.Parameter.empty,
+                )
+            )
+            annotations[param_name] = python_type
+        else:
+            default_val = param_def.get("default", None)
+            params.append(
+                inspect.Parameter(
+                    param_name,
+                    inspect.Parameter.KEYWORD_ONLY,
+                    default=default_val,
+                )
+            )
+            annotations[param_name] = Optional[python_type]
+    new_sig = inspect.Signature(params)
+
+    async def typed_tool_fn(**kwargs) -> str:
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        result = await call_mesh_api(agent_id, tool_name, filtered_kwargs)
         return str(result)
 
-    return tool_fn
+    typed_tool_fn.__signature__ = new_sig
+    typed_tool_fn.__annotations__ = annotations
+    typed_tool_fn.__name__ = sanitize_tool_name(tool_name)
+
+    return typed_tool_fn
+
+
+def register_agent_tools(mcp: FastMCP, agent_id: str, metadata: dict[str, Any], prefix: str = "") -> int:
+    """Register all tools from an agent's metadata to an MCP server.
+
+    Returns the number of tools registered.
+    """
+    tools = metadata.get("tools", [])
+    registered = 0
+
+    for tool_def in tools:
+        if tool_def.get("type") != "function":
+            continue
+
+        func_def = tool_def.get("function", {})
+        tool_name = func_def.get("name")
+        if not tool_name:
+            continue
+
+        description = func_def.get("description", f"Execute {tool_name}")
+        parameters = func_def.get("parameters", {"type": "object", "properties":
+        mcp_tool_name = f"{prefix}{sanitize_tool_name(tool_name)}" if prefix else sanitize_tool_name(tool_name)
+
+        tool_fn = make_agent_tool(agent_id, tool_name, parameters)
+        mcp.tool(name=mcp_tool_name, description=description)(tool_fn)
+        registered += 1
+
+    return registered
 
 
 def create_single_agent_mcp(agent_id: str, metadata: dict[str, Any]) -> FastMCP:
-    """Create an MCP server for a single agent."""
-    agent_meta = metadata.get("metadata", {})
-    description = agent_meta.get("description", f"Query the {agent_id} agent")
-
+    """Create an MCP server for a single agent with all its tools."""
     mcp = FastMCP(
         name=f"mesh-{agent_id}",
         stateless_http=True,
@@ -112,8 +192,8 @@ def create_single_agent_mcp(agent_id: str, metadata: dict[str, Any]) -> FastMCP:
     mcp.settings.streamable_http_path = "/"
     mcp.settings.sse_path = "/"
 
-    tool_fn = make_agent_tool(agent_id)
-    mcp.tool(name=create_tool_name(agent_id), description=description)(tool_fn)
+    tool_count = register_agent_tools(mcp, agent_id, metadata)
+    logger.info(f"Registered {tool_count} tools for agent {agent_id}")
 
     return mcp
 
@@ -121,7 +201,7 @@ def create_single_agent_mcp(agent_id: str, metadata: dict[str, Any]) -> FastMCP:
 def create_curated_mcp(
     agent_ids: list[str], all_metadata: dict[str, dict[str, Any]]
 ) -> FastMCP:
-    """Create an MCP server with multiple curated agents as tools."""
+    """Create an MCP server with all tools from curated agents."""
     mcp = FastMCP(
         name="mesh-curated-agents",
         stateless_http=True,
@@ -130,18 +210,19 @@ def create_curated_mcp(
     mcp.settings.streamable_http_path = "/"
     mcp.settings.sse_path = "/"
 
+    total_tools = 0
     for agent_id in agent_ids:
         if agent_id not in all_metadata:
             logger.warning(f"Curated agent {agent_id} not found in metadata")
             continue
 
         metadata = all_metadata[agent_id]
-        agent_meta = metadata.get("metadata", {})
-        description = agent_meta.get("description", f"Query the {agent_id} agent")
+        prefix = f"{sanitize_tool_name(agent_id)}_"
+        tool_count = register_agent_tools(mcp, agent_id, metadata, prefix=prefix)
+        total_tools += tool_count
+        logger.info(f"Registered {tool_count} tools from {agent_id} to curated MCP")
 
-        tool_fn = make_agent_tool(agent_id)
-        mcp.tool(name=create_tool_name(agent_id), description=description)(tool_fn)
-
+    logger.info(f"Total tools in curated MCP: {total_tools}")
     return mcp
 
 
@@ -173,6 +254,25 @@ async def health_check(request):
     )
 
 
+def get_agent_tools(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract tool definitions from agent metadata."""
+    tools = []
+    for tool_def in metadata.get("tools", []):
+        if tool_def.get("type") != "function":
+            continue
+        func_def = tool_def.get("function", {})
+        tool_name = func_def.get("name")
+        if not tool_name:
+            continue
+        tools.append({
+            "name": tool_name,
+            "description": func_def.get("description", ""),
+            "parameters": func_def.get("parameters", {}).get("properties", {}),
+            "required": func_def.get("parameters", {}).get("required", []),
+        })
+    return tools
+
+
 async def list_agents(request):
     """List all available agents and their endpoints."""
     agents = []
@@ -185,6 +285,7 @@ async def list_agents(request):
                 "id": agent_id,
                 "name": agent_meta.get("name", agent_id),
                 "description": agent_meta.get("description", ""),
+                "tools": get_agent_tools(metadata),
                 "endpoints": {
                     "streamable_http": f"/mcp/agents/{agent_id}",
                     "sse": f"/mcp/agents/{agent_id}/sse",
