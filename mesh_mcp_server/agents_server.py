@@ -61,16 +61,15 @@ def fetch_agent_metadata_sync() -> dict[str, dict[str, Any]]:
         return {}
 
 
-async def call_mesh_api(agent_id: str, tool_name: str, tool_params: dict[str, Any]) -> dict[str, Any]:
+async def call_mesh_api(
+    agent_id: str, tool_name: str, tool_params: dict[str, Any]
+) -> dict[str, Any]:
     """Execute an agent tool via the mesh API."""
     async with aiohttp.ClientSession() as session:
         url = f"{MESH_API_ENDPOINT}/mesh_request"
         request_data = {
             "agent_id": agent_id,
-            "input": {
-                "tool_name": tool_name,
-                **tool_params
-            }
+            "input": {"tool_name": tool_name, **tool_params},
         }
         if "HEURIST_API_KEY" in os.environ:
             request_data["api_key"] = os.environ["HEURIST_API_KEY"]
@@ -105,6 +104,7 @@ def make_agent_tool(agent_id: str, tool_name: str, parameters: dict[str, Any]):
     async def tool_fn(**kwargs) -> str:
         result = await call_mesh_api(agent_id, tool_name, kwargs)
         return str(result)
+
     params = []
     annotations = {"return": str}
 
@@ -154,7 +154,9 @@ def make_agent_tool(agent_id: str, tool_name: str, parameters: dict[str, Any]):
     return typed_tool_fn
 
 
-def register_agent_tools(mcp: FastMCP, agent_id: str, metadata: dict[str, Any], prefix: str = "") -> int:
+def register_agent_tools(
+    mcp: FastMCP, agent_id: str, metadata: dict[str, Any], prefix: str = ""
+) -> int:
     """Register all tools from an agent's metadata to an MCP server.
 
     Returns the number of tools registered.
@@ -172,8 +174,12 @@ def register_agent_tools(mcp: FastMCP, agent_id: str, metadata: dict[str, Any], 
             continue
 
         description = func_def.get("description", f"Execute {tool_name}")
-        parameters = func_def.get("parameters", {"type": "object", "properties":
-        mcp_tool_name = f"{prefix}{sanitize_tool_name(tool_name)}" if prefix else sanitize_tool_name(tool_name)
+        parameters = func_def.get("parameters", {"type": "object", "properties": {}})
+        mcp_tool_name = (
+            f"{prefix}{sanitize_tool_name(tool_name)}"
+            if prefix
+            else sanitize_tool_name(tool_name)
+        )
 
         tool_fn = make_agent_tool(agent_id, tool_name, parameters)
         mcp.tool(name=mcp_tool_name, description=description)(tool_fn)
@@ -264,12 +270,14 @@ def get_agent_tools(metadata: dict[str, Any]) -> list[dict[str, Any]]:
         tool_name = func_def.get("name")
         if not tool_name:
             continue
-        tools.append({
-            "name": tool_name,
-            "description": func_def.get("description", ""),
-            "parameters": func_def.get("parameters", {}).get("properties", {}),
-            "required": func_def.get("parameters", {}).get("required", []),
-        })
+        tools.append(
+            {
+                "name": tool_name,
+                "description": func_def.get("description", ""),
+                "parameters": func_def.get("parameters", {}).get("properties", {}),
+                "required": func_def.get("parameters", {}).get("required", []),
+            }
+        )
     return tools
 
 
