@@ -26,6 +26,11 @@ logger.handlers = []
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
+# Suppress noisy MCP library logs (ClosedResourceError is expected in stateless mode)
+logging.getLogger("mcp.server.streamable_http").setLevel(logging.WARNING)
+logging.getLogger("mcp.server.sse").setLevel(logging.WARNING)
+logging.getLogger("anyio").setLevel(logging.WARNING)
+
 MESH_API_ENDPOINT = os.getenv("MESH_API_ENDPOINT", "https://sequencer-v2.heurist.xyz")
 MESH_METADATA_ENDPOINT = os.getenv(
     "MESH_METADATA_ENDPOINT", "https://mesh.heurist.ai/mesh_agents_metadata.json"
