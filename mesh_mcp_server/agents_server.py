@@ -212,8 +212,8 @@ def register_agent_tools(
             # For curated MCP, include agent prefix in the tool ID
             mcp_tool_name = create_tool_id(prefix.rstrip("_"), tool_name)
         else:
-            # For individual agent MCP, just use the tool name
-            mcp_tool_name = sanitize_name(tool_name)
+            # For individual agent MCP, use agent_id + tool_name
+            mcp_tool_name = create_tool_id(agent_id, tool_name)
 
         tool_fn = make_agent_tool(agent_id, tool_name, parameters)
         mcp.tool(name=mcp_tool_name, description=description)(tool_fn)
