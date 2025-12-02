@@ -27,9 +27,11 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 # Suppress noisy MCP library logs (ClosedResourceError is expected in stateless mode)
-logging.getLogger("mcp.server.streamable_http").setLevel(logging.WARNING)
-logging.getLogger("mcp.server.sse").setLevel(logging.WARNING)
-logging.getLogger("anyio").setLevel(logging.WARNING)
+logging.getLogger("mcp.server.streamable_http").setLevel(logging.CRITICAL)
+logging.getLogger("mcp.server.sse").setLevel(logging.CRITICAL)
+logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.CRITICAL)
+logging.getLogger("mcp").setLevel(logging.CRITICAL)
+logging.getLogger("anyio").setLevel(logging.CRITICAL)
 
 MESH_API_ENDPOINT = os.getenv("MESH_API_ENDPOINT", "https://sequencer-v2.heurist.xyz")
 MESH_METADATA_ENDPOINT = os.getenv(
@@ -94,14 +96,34 @@ async def call_mesh_api(
             return await response.json()
 
 
-def sanitize_tool_name(name: str) -> str:
-    """Convert a tool name to a valid Python function name."""
+def sanitize_name(name: str) -> str:
+    """Convert a name to a valid Python identifier."""
     name = name.lower()
     name = "".join(c if c.isalnum() else "_" for c in name)
     name = "_".join(filter(None, name.split("_")))
     if name and name[0].isdigit():
         name = f"tool_{name}"
     return name
+
+
+def create_tool_id(agent_id: str, tool_name: str, max_length: int = 50) -> str:
+    """Create a tool ID by combining agent ID and tool name.
+
+    Truncates the agent ID if necessary to keep the total length within limits.
+    This is needed because some MCP clients (like Cursor) have length limits.
+    """
+    agent_id_lower = sanitize_name(agent_id)
+    tool_name_sanitized = sanitize_name(tool_name)
+    separator = "_"
+
+    max_agent_id_length = max_length - len(separator) - len(tool_name_sanitized)
+    if max_agent_id_length > 0 and len(agent_id_lower) > max_agent_id_length:
+        agent_id_lower = agent_id_lower[:max_agent_id_length]
+        logger.info(
+            f"Truncated agent ID for tool {tool_name}: {agent_id} -> {agent_id_lower}"
+        )
+
+    return f"{agent_id_lower}{separator}{tool_name_sanitized}"
 
 
 def make_agent_tool(agent_id: str, tool_name: str, parameters: dict[str, Any]):
@@ -158,7 +180,7 @@ def make_agent_tool(agent_id: str, tool_name: str, parameters: dict[str, Any]):
 
     typed_tool_fn.__signature__ = new_sig
     typed_tool_fn.__annotations__ = annotations
-    typed_tool_fn.__name__ = sanitize_tool_name(tool_name)
+    typed_tool_fn.__name__ = sanitize_name(tool_name)
 
     return typed_tool_fn
 
@@ -184,11 +206,14 @@ def register_agent_tools(
 
         description = func_def.get("description", f"Execute {tool_name}")
         parameters = func_def.get("parameters", {"type": "object", "properties": {}})
-        mcp_tool_name = (
-            f"{prefix}{sanitize_tool_name(tool_name)}"
-            if prefix
-            else sanitize_tool_name(tool_name)
-        )
+
+        # Use create_tool_id for proper length limiting (Cursor compatibility)
+        if prefix:
+            # For curated MCP, include agent prefix in the tool ID
+            mcp_tool_name = create_tool_id(prefix.rstrip("_"), tool_name)
+        else:
+            # For individual agent MCP, just use the tool name
+            mcp_tool_name = sanitize_name(tool_name)
 
         tool_fn = make_agent_tool(agent_id, tool_name, parameters)
         mcp.tool(name=mcp_tool_name, description=description)(tool_fn)
@@ -232,7 +257,7 @@ def create_curated_mcp(
             continue
 
         metadata = all_metadata[agent_id]
-        prefix = f"{sanitize_tool_name(agent_id)}_"
+        prefix = f"{sanitize_name(agent_id)}_"
         tool_count = register_agent_tools(mcp, agent_id, metadata, prefix=prefix)
         total_tools += tool_count
         logger.info(f"Registered {tool_count} tools from {agent_id} to curated MCP")
