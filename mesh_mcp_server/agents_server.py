@@ -317,6 +317,7 @@ def get_agent_tools(metadata: dict[str, Any]) -> list[dict[str, Any]]:
 
 async def list_agents(request):
     """List all available agents and their endpoints."""
+    base_url = "https://mesh.heurist.xyz"
     agents = []
     for agent_id, metadata in ALL_METADATA.items():
         agent_meta = metadata.get("metadata", {})
@@ -327,10 +328,9 @@ async def list_agents(request):
                 "id": agent_id,
                 "name": agent_meta.get("name", agent_id),
                 "description": agent_meta.get("description", ""),
-                "tools": get_agent_tools(metadata),
                 "endpoints": {
-                    "streamable_http": f"/mcp/agents/{agent_id}",
-                    "sse": f"/mcp/agents/{agent_id}/sse",
+                    "streamable_http": f"{base_url}/mcp/agents/{agent_id}/",
+                    "sse": f"{base_url}/mcp/agents/{agent_id}/sse",
                 },
             }
         )
@@ -340,8 +340,8 @@ async def list_agents(request):
             "curated": {
                 "agents": CURATED_AGENTS,
                 "endpoints": {
-                    "streamable_http": "/mcp",
-                    "sse": "/mcp/sse",
+                    "streamable_http": f"{base_url}/mcp/",
+                    "sse": f"{base_url}/mcp/sse",
                 },
             },
             "all_agents": agents,
