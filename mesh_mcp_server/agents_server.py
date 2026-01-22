@@ -1,7 +1,11 @@
+import asyncio
 import contextlib
 import inspect
 import logging
 import os
+import re
+import time
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import aiohttp
@@ -13,7 +17,7 @@ from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Route
 
 load_dotenv()
 
@@ -35,7 +39,7 @@ logging.getLogger("anyio").setLevel(logging.CRITICAL)
 
 MESH_API_ENDPOINT = os.getenv("MESH_API_ENDPOINT", "https://sequencer-v2.heurist.xyz")
 MESH_METADATA_ENDPOINT = os.getenv(
-    "MESH_METADATA_ENDPOINT", "https://mesh.heurist.ai/mesh_agents_metadata.json"
+    "MESH_METADATA_ENDPOINT", "https://mesh.heurist.ai/metadata.json"
 )
 
 CURATED_AGENTS = [
@@ -48,6 +52,72 @@ CURATED_AGENTS = [
     "TrendingTokenAgent",
     "AIXBTProjectInfoAgent",
 ]
+
+METADATA_REFRESH_INTERVAL = int(os.getenv("METADATA_REFRESH_INTERVAL", "600"))
+
+
+@dataclass
+class MetadataManager:
+    """Manages agent metadata with periodic refresh capability."""
+
+    metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
+    last_refresh: float = 0
+    refresh_interval: int = METADATA_REFRESH_INTERVAL
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    async def fetch_async(self) -> dict[str, dict[str, Any]]:
+        """Fetch metadata asynchronously."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    MESH_METADATA_ENDPOINT, timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status != 200:
+                        logger.error(
+                            f"Failed to fetch metadata: HTTP {response.status}"
+                        )
+                        return {}
+                    data = await response.json()
+                    return data.get("agents", {})
+        except Exception as e:
+            logger.error(f"Error fetching metadata async: {e}")
+            return {}
+
+    async def refresh(self) -> bool:
+        """Refresh metadata if changed. Returns True if updated."""
+        async with self._lock:
+            new_metadata = await self.fetch_async()
+            if not new_metadata:
+                logger.warning("Failed to fetch new metadata, keeping existing")
+                return False
+
+            if new_metadata == self.metadata:
+                logger.info("Metadata unchanged, skipping rebuild")
+                self.last_refresh = time.time()
+                return False
+
+            self.metadata = new_metadata
+            self.last_refresh = time.time()
+            logger.info(f"Metadata refreshed: {len(self.metadata)} agents")
+            return True
+
+    async def start_refresh_loop(self):
+        """Background task for periodic refresh."""
+        logger.info(
+            f"Starting metadata refresh loop (interval: {self.refresh_interval}s)"
+        )
+        while True:
+            await asyncio.sleep(self.refresh_interval)
+            try:
+                logger.info("Running scheduled metadata refresh...")
+                changed = await self.refresh()
+                if changed:
+                    await rebuild_mcp_servers()
+            except Exception as e:
+                logger.error(f"Refresh loop error: {e}")
+
+
+METADATA_MANAGER = MetadataManager()
 
 
 def fetch_agent_metadata_sync() -> dict[str, dict[str, Any]]:
@@ -266,32 +336,99 @@ def create_curated_mcp(
     return mcp
 
 
-logger.info("Loading agent metadata at startup...")
-ALL_METADATA = fetch_agent_metadata_sync()
-logger.info(f"Loaded {len(ALL_METADATA)} agents")
-
-CURATED_MCP = create_curated_mcp(CURATED_AGENTS, ALL_METADATA)
-logger.info(f"Created curated MCP server with {len(CURATED_AGENTS)} agents")
-
+CURATED_MCP: FastMCP = None
 AGENT_MCPS: dict[str, FastMCP] = {}
-for agent_id, metadata in ALL_METADATA.items():
-    agent_meta = metadata.get("metadata", {})
-    if agent_meta.get("hidden", False):
-        continue
-    AGENT_MCPS[agent_id] = create_single_agent_mcp(agent_id, metadata)
 
-logger.info(f"Created {len(AGENT_MCPS)} individual agent MCP servers")
+
+async def rebuild_mcp_servers():
+    """Rebuild all MCP servers with current metadata."""
+    global CURATED_MCP, AGENT_MCPS
+
+    metadata = METADATA_MANAGER.metadata
+    if not metadata:
+        logger.warning("No metadata available, skipping rebuild")
+        return
+
+    logger.info("Rebuilding MCP servers with updated metadata...")
+    new_curated = create_curated_mcp(CURATED_AGENTS, metadata)
+    new_agent_mcps = {}
+    for agent_id, agent_metadata in metadata.items():
+        agent_meta = agent_metadata.get("metadata", {})
+        if agent_meta.get("hidden", False):
+            continue
+        new_agent_mcps[agent_id] = create_single_agent_mcp(agent_id, agent_metadata)
+    CURATED_MCP = new_curated
+    AGENT_MCPS = new_agent_mcps
+
+    logger.info(
+        f"Rebuilt MCP servers: curated={len(CURATED_AGENTS)} agents, "
+        f"individual={len(AGENT_MCPS)} agents"
+    )
+
+
+def initialize_servers():
+    """Initialize MCP servers at startup (synchronous)."""
+    global CURATED_MCP, AGENT_MCPS
+
+    logger.info("Loading agent metadata at startup...")
+    initial_metadata = fetch_agent_metadata_sync()
+    METADATA_MANAGER.metadata = initial_metadata
+    METADATA_MANAGER.last_refresh = time.time()
+    logger.info(f"Loaded {len(initial_metadata)} agents")
+
+    CURATED_MCP = create_curated_mcp(CURATED_AGENTS, initial_metadata)
+    logger.info(f"Created curated MCP server with {len(CURATED_AGENTS)} agents")
+
+    AGENT_MCPS = {}
+    for agent_id, metadata in initial_metadata.items():
+        agent_meta = metadata.get("metadata", {})
+        if agent_meta.get("hidden", False):
+            continue
+        AGENT_MCPS[agent_id] = create_single_agent_mcp(agent_id, metadata)
+
+    logger.info(f"Created {len(AGENT_MCPS)} individual agent MCP servers")
+
+
+initialize_servers()
 
 
 async def health_check(request):
-    """Health check endpoint."""
+    """Health check endpoint with refresh status."""
     return JSONResponse(
         {
             "status": "healthy",
             "curated_agents": len(CURATED_AGENTS),
             "total_agents": len(AGENT_MCPS),
+            "last_refresh": METADATA_MANAGER.last_refresh,
+            "refresh_interval_seconds": METADATA_MANAGER.refresh_interval,
+            "seconds_since_refresh": int(time.time() - METADATA_MANAGER.last_refresh),
         }
     )
+
+
+async def refresh_metadata(request):
+    """POST /mcp/refresh - Manually trigger metadata refresh."""
+    try:
+        changed = await METADATA_MANAGER.refresh()
+        if changed:
+            await rebuild_mcp_servers()
+            return JSONResponse(
+                {
+                    "status": "refreshed",
+                    "agents_count": len(METADATA_MANAGER.metadata),
+                    "last_refresh": METADATA_MANAGER.last_refresh,
+                }
+            )
+        return JSONResponse(
+            {
+                "status": "unchanged",
+                "agents_count": len(METADATA_MANAGER.metadata),
+                "last_refresh": METADATA_MANAGER.last_refresh,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Manual refresh failed: {e}")
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
 def get_agent_tools(metadata: dict[str, Any]) -> list[dict[str, Any]]:
@@ -319,7 +456,7 @@ async def list_agents(request):
     """List all available agents and their endpoints."""
     base_url = "https://mesh.heurist.xyz"
     agents = []
-    for agent_id, metadata in ALL_METADATA.items():
+    for agent_id, metadata in METADATA_MANAGER.metadata.items():
         agent_meta = metadata.get("metadata", {})
         if agent_meta.get("hidden", False):
             continue
@@ -351,51 +488,114 @@ async def list_agents(request):
 
 @contextlib.asynccontextmanager
 async def lifespan(app: Starlette):
-    """Manage lifespan of all MCP servers."""
+    """Manage lifespan of all MCP servers and background tasks."""
+    refresh_task = asyncio.create_task(METADATA_MANAGER.start_refresh_loop())
+    logger.info(
+        f"Started metadata refresh background task "
+        f"(interval: {METADATA_MANAGER.refresh_interval}s)"
+    )
+
     async with contextlib.AsyncExitStack() as stack:
         await stack.enter_async_context(CURATED_MCP.session_manager.run())
         for agent_mcp in AGENT_MCPS.values():
             await stack.enter_async_context(agent_mcp.session_manager.run())
         logger.info("All MCP session managers started")
         yield
-    logger.info("All MCP session managers stopped")
+
+    # Cleanup
+    refresh_task.cancel()
+    try:
+        await refresh_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("All MCP session managers and refresh task stopped")
 
 
-class TrailingSlashMiddleware:
-    """Add trailing slash to MCP routes if missing, except for health and agents endpoints."""
+class DynamicMCPMiddleware:
+    """Middleware that dynamically routes MCP protocol requests to current instances.
+
+    This is the KEY to making tool definitions update without server restart.
+    Instead of static Mount objects that capture MCP instances at startup,
+    this middleware reads from the CURRENT global CURATED_MCP and AGENT_MCPS
+    on every request, so updates from rebuild_mcp_servers() take effect immediately.
+    """
+
+    # JSON API endpoints that should pass through to regular Starlette routes
+    API_ENDPOINTS = {"/mcp/health", "/mcp/agents", "/mcp/refresh"}
 
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            path = scope["path"]
-            if path.startswith("/mcp") and not path.endswith("/"):
-                if path not in ["/mcp/health", "/mcp/agents"]:
-                    scope["path"] = path + "/"
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope["path"]
+
+        if path.startswith("/mcp") and not path.endswith("/"):
+            if path not in self.API_ENDPOINTS:
+                path = path + "/"
+                scope = dict(scope)
+                scope["path"] = path
+
+        if path.rstrip("/") in self.API_ENDPOINTS:
+            await self.app(scope, receive, send)
+            return
+        match = re.match(r"^/mcp/agents/([^/]+)(/sse)?(/.*)?$", path)
+        if match:
+            agent_id = match.group(1)
+            use_sse = match.group(2) == "/sse"
+            remaining = match.group(3) or "/"
+
+            if agent_id not in AGENT_MCPS:
+                response = JSONResponse(
+                    {"error": f"Agent '{agent_id}' not found"}, status_code=404
+                )
+                await response(scope, receive, send)
+                return
+
+            mcp = AGENT_MCPS[agent_id]
+            new_scope = dict(scope)
+            new_scope["path"] = remaining
+
+            mcp_app = mcp.sse_app() if use_sse else mcp.streamable_http_app()
+            await mcp_app(new_scope, receive, send)
+            return
+
+        # Handle curated MCP SSE endpoint: /mcp/sse/...
+        if path.startswith("/mcp/sse"):
+            new_scope = dict(scope)
+            new_scope["path"] = path[8:] or "/"
+            await CURATED_MCP.sse_app()(new_scope, receive, send)
+            return
+
+        if path.startswith("/mcp"):
+            new_scope = dict(scope)
+            new_scope["path"] = path[4:] or "/"
+            await CURATED_MCP.streamable_http_app()(new_scope, receive, send)
+            return
+
         await self.app(scope, receive, send)
 
 
+# Build routes - only JSON API endpoints
+# MCP protocol endpoints are handled by DynamicMCPMiddleware for true dynamic routing
 routes = [
     Route("/mcp/health", endpoint=health_check),
     Route("/mcp/agents", endpoint=list_agents),
+    Route("/mcp/refresh", endpoint=refresh_metadata, methods=["POST"]),
 ]
-
-for agent_id, agent_mcp in AGENT_MCPS.items():
-    routes.append(Mount(f"/mcp/agents/{agent_id}/sse", app=agent_mcp.sse_app()))
-    routes.append(Mount(f"/mcp/agents/{agent_id}", app=agent_mcp.streamable_http_app()))
-
-routes.append(Mount("/mcp/sse", app=CURATED_MCP.sse_app()))
-routes.append(Mount("/mcp", app=CURATED_MCP.streamable_http_app()))
-
 app = Starlette(
     routes=routes,
     lifespan=lifespan,
-    middleware=[Middleware(TrailingSlashMiddleware)],
+    middleware=[Middleware(DynamicMCPMiddleware)],
 )
 
 logger.info(
-    "Routes configured - Curated: /mcp, /mcp/sse | Individual: /mcp/agents/<agent_id>"
+    "Routes configured with dynamic MCP routing - "
+    "Curated: /mcp, /mcp/sse | Individual: /mcp/agents/<agent_id> | "
+    "API: /mcp/health, /mcp/agents, /mcp/refresh"
 )
 
 
