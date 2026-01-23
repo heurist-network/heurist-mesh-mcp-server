@@ -29,6 +29,7 @@ logger = colorlog.getLogger("mesh-mcp")
 logger.handlers = []
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
+logger.propagate = False
 
 # Suppress noisy MCP library logs (ClosedResourceError is expected in stateless mode)
 logging.getLogger("mcp.server.streamable_http").setLevel(logging.CRITICAL)
