@@ -495,6 +495,10 @@ async def lifespan(app: Starlette):
         f"(interval: {METADATA_MANAGER.refresh_interval}s)"
     )
 
+    CURATED_MCP.streamable_http_app()
+    for agent_mcp in AGENT_MCPS.values():
+        agent_mcp.streamable_http_app()
+
     async with contextlib.AsyncExitStack() as stack:
         await stack.enter_async_context(CURATED_MCP.session_manager.run())
         for agent_mcp in AGENT_MCPS.values():
