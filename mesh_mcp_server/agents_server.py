@@ -14,6 +14,7 @@ import httpx
 import uvicorn
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.responses import JSONResponse
@@ -66,6 +67,11 @@ METADATA_REFRESH_INTERVAL = int(os.getenv("METADATA_REFRESH_INTERVAL", "600"))
 
 # Cache for agent credits (populated from metadata)
 AGENT_CREDITS: dict[str, int] = {}
+
+# Transport security settings - disable DNS rebinding protection since we're behind nginx
+TRANSPORT_SECURITY = TransportSecuritySettings(
+    enable_dns_rebinding_protection=False,
+)
 
 
 @dataclass
@@ -356,6 +362,7 @@ def create_single_agent_mcp(agent_id: str, metadata: dict[str, Any]) -> FastMCP:
         name=f"mesh-{agent_id}",
         stateless_http=True,
         json_response=True,
+        transport_security=TRANSPORT_SECURITY,
     )
     mcp.settings.streamable_http_path = "/"
     mcp.settings.sse_path = "/"
@@ -374,6 +381,7 @@ def create_curated_mcp(
         name="mesh-curated-agents",
         stateless_http=True,
         json_response=True,
+        transport_security=TRANSPORT_SECURITY,
     )
     mcp.settings.streamable_http_path = "/"
     mcp.settings.sse_path = "/"
