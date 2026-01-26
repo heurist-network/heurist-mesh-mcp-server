@@ -19,6 +19,14 @@ from starlette.middleware import Middleware
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from .auth import (
+    AuthContext,
+    AuthValidator,
+    get_current_auth_context,
+    get_validator,
+    set_current_auth_context,
+)
+
 load_dotenv()
 
 handler = colorlog.StreamHandler()
@@ -55,6 +63,9 @@ CURATED_AGENTS = [
 ]
 
 METADATA_REFRESH_INTERVAL = int(os.getenv("METADATA_REFRESH_INTERVAL", "600"))
+
+# Cache for agent credits (populated from metadata)
+AGENT_CREDITS: dict[str, int] = {}
 
 
 @dataclass
@@ -139,10 +150,56 @@ def fetch_agent_metadata_sync() -> dict[str, dict[str, Any]]:
         return {}
 
 
+def get_agent_credits(agent_id: str) -> int:
+    """Get the credit cost for an agent from cached metadata."""
+    return AGENT_CREDITS.get(agent_id, 0)
+
+
+def update_agent_credits_cache(metadata: dict[str, dict[str, Any]]) -> None:
+    """Update the agent credits cache from metadata."""
+    global AGENT_CREDITS
+    new_credits = {}
+    for agent_id, agent_data in metadata.items():
+        agent_meta = agent_data.get("metadata", {})
+        credits = agent_meta.get("credits", 0)
+        if isinstance(credits, (int, float)):
+            new_credits[agent_id] = int(credits)
+        else:
+            new_credits[agent_id] = 0
+    AGENT_CREDITS = new_credits
+    logger.info(f"Updated agent credits cache: {len(new_credits)} agents")
+
+
 async def call_mesh_api(
     agent_id: str, tool_name: str, tool_params: dict[str, Any]
 ) -> dict[str, Any]:
-    """Execute an agent tool via the mesh API."""
+    """Execute an agent tool via the mesh API.
+
+    This function:
+    1. Gets the current auth context (API key and user info)
+    2. Deducts credits based on agent's credit cost
+    3. Calls the mesh API with the user's API key
+    """
+    auth_ctx = get_current_auth_context()
+
+    if auth_ctx and auth_ctx.heurist_key:
+        api_key = auth_ctx.heurist_key
+    elif "HEURIST_API_KEY" in os.environ:
+        api_key = os.environ["HEURIST_API_KEY"]
+    else:
+        api_key = None
+    credit_cost = get_agent_credits(agent_id)
+    if auth_ctx and auth_ctx.user_id != "anonymous" and credit_cost > 0:
+        validator = get_validator()
+        success = validator.deduct_credits(auth_ctx.user_id, credit_cost)
+        if not success:
+            raise ValueError(
+                f"Insufficient credits. This agent requires {credit_cost} credits."
+            )
+        logger.info(
+            f"Deducted {credit_cost} credits from {auth_ctx.user_id} for {agent_id}"
+        )
+
     async with aiohttp.ClientSession() as session:
         url = f"{MESH_API_ENDPOINT}/mesh_request"
         request_data = {
@@ -153,12 +210,12 @@ async def call_mesh_api(
                 "raw_data_only": True,
             },
         }
-        if "HEURIST_API_KEY" in os.environ:
-            request_data["api_key"] = os.environ["HEURIST_API_KEY"]
+        if api_key:
+            request_data["api_key"] = api_key
 
         headers = {}
-        if "HEURIST_API_KEY" in os.environ:
-            headers["X-HEURIST-API-KEY"] = os.environ["HEURIST_API_KEY"]
+        if api_key:
+            headers["X-HEURIST-API-KEY"] = api_key
 
         async with session.post(url, json=request_data, headers=headers) as response:
             if response.status != 200:
@@ -351,6 +408,9 @@ async def rebuild_mcp_servers():
         return
 
     logger.info("Rebuilding MCP servers with updated metadata...")
+
+    update_agent_credits_cache(metadata)
+
     new_curated = create_curated_mcp(CURATED_AGENTS, metadata)
     new_agent_mcps = {}
     for agent_id, agent_metadata in metadata.items():
@@ -376,6 +436,16 @@ def initialize_servers():
     METADATA_MANAGER.metadata = initial_metadata
     METADATA_MANAGER.last_refresh = time.time()
     logger.info(f"Loaded {len(initial_metadata)} agents")
+
+    # Initialize agent credits cache
+    update_agent_credits_cache(initial_metadata)
+    try:
+        get_validator()
+    except Exception as e:
+        logger.error(f"Failed to initialize auth validator: {e}")
+        logger.warning(
+            "Continuing without authentication - set AUTH_ENABLED=false to suppress"
+        )
 
     CURATED_MCP = create_curated_mcp(CURATED_AGENTS, initial_metadata)
     logger.info(f"Created curated MCP server with {len(CURATED_AGENTS)} agents")
@@ -523,6 +593,12 @@ class DynamicMCPMiddleware:
     Instead of static Mount objects that capture MCP instances at startup,
     this middleware reads from the CURRENT global CURATED_MCP and AGENT_MCPS
     on every request, so updates from rebuild_mcp_servers() take effect immediately.
+
+    Additionally, this middleware handles API key authentication:
+    1. Extracts API key from Authorization header
+    2. Validates against DynamoDB
+    3. Checks credits
+    4. Sets auth context for downstream use
     """
 
     # JSON API endpoints that should pass through to regular Starlette routes
@@ -530,6 +606,71 @@ class DynamicMCPMiddleware:
 
     def __init__(self, app):
         self.app = app
+
+    def _get_header(self, scope: dict, name: str) -> Optional[str]:
+        """Extract a header value from the ASGI scope."""
+        name_lower = name.lower().encode()
+        for header_name, header_value in scope.get("headers", []):
+            if header_name.lower() == name_lower:
+                return header_value.decode()
+        return None
+
+    def _get_query_param(self, scope: dict, name: str) -> Optional[str]:
+        """Extract a query parameter from the ASGI scope."""
+        query_string = scope.get("query_string", b"").decode()
+        if not query_string:
+            return None
+        for param in query_string.split("&"):
+            if "=" in param:
+                key, value = param.split("=", 1)
+                if key == name:
+                    return value
+        return None
+
+    async def _send_error_response(
+        self, scope, receive, send, status_code: int, message: str
+    ):
+        """Send an error JSON response."""
+        response = JSONResponse({"error": message}, status_code=status_code)
+        await response(scope, receive, send)
+
+    async def _authenticate(
+        self, scope
+    ) -> tuple[bool, Optional[str], Optional[AuthContext]]:
+        """Authenticate the request and return (success, error_message, auth_context).
+
+        Returns:
+            (True, None, AuthContext) on success
+            (False, error_message, None) on failure
+        """
+        try:
+            validator = get_validator()
+        except Exception as e:
+            logger.error(f"Auth validator not available: {e}")
+            return True, None, None
+
+        if not validator.enabled:
+            return True, None, None
+
+        # Try to get API key from headers (X-HEURIST-API-KEY preferred, then Authorization)
+        x_heurist_key = self._get_header(scope, "x-heurist-api-key")
+        auth_header = self._get_header(scope, "authorization")
+        api_key = AuthValidator.extract_api_key_from_headers(auth_header, x_heurist_key)
+
+        if not api_key:
+            api_key = self._get_query_param(scope, "api_key")
+
+        if not api_key:
+            return (
+                False,
+                "API key required. Provide via X-HEURIST-API-KEY header or api_key query parameter.",
+                None,
+            )
+        try:
+            auth_ctx = validator.validate_api_key(api_key)
+            return True, None, auth_ctx
+        except ValueError as e:
+            return False, str(e), None
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -547,41 +688,51 @@ class DynamicMCPMiddleware:
         if path.rstrip("/") in self.API_ENDPOINTS:
             await self.app(scope, receive, send)
             return
-        match = re.match(r"^/mcp/agents/([^/]+)(/sse)?(/.*)?$", path)
-        if match:
-            agent_id = match.group(1)
-            use_sse = match.group(2) == "/sse"
-            remaining = match.group(3) or "/"
 
-            if agent_id not in AGENT_MCPS:
-                response = JSONResponse(
-                    {"error": f"Agent '{agent_id}' not found"}, status_code=404
-                )
-                await response(scope, receive, send)
+        success, error_msg, auth_ctx = await self._authenticate(scope)
+        if not success:
+            await self._send_error_response(scope, receive, send, 401, error_msg)
+            return
+
+        token = set_current_auth_context(auth_ctx)
+
+        try:
+            match = re.match(r"^/mcp/agents/([^/]+)(/sse)?(/.*)?$", path)
+            if match:
+                agent_id = match.group(1)
+                use_sse = match.group(2) == "/sse"
+                remaining = match.group(3) or "/"
+
+                if agent_id not in AGENT_MCPS:
+                    response = JSONResponse(
+                        {"error": f"Agent '{agent_id}' not found"}, status_code=404
+                    )
+                    await response(scope, receive, send)
+                    return
+
+                mcp = AGENT_MCPS[agent_id]
+                new_scope = dict(scope)
+                new_scope["path"] = remaining
+
+                mcp_app = mcp.sse_app() if use_sse else mcp.streamable_http_app()
+                await mcp_app(new_scope, receive, send)
                 return
 
-            mcp = AGENT_MCPS[agent_id]
-            new_scope = dict(scope)
-            new_scope["path"] = remaining
+            if path.startswith("/mcp/sse"):
+                new_scope = dict(scope)
+                new_scope["path"] = path[8:] or "/"
+                await CURATED_MCP.sse_app()(new_scope, receive, send)
+                return
 
-            mcp_app = mcp.sse_app() if use_sse else mcp.streamable_http_app()
-            await mcp_app(new_scope, receive, send)
-            return
+            if path.startswith("/mcp"):
+                new_scope = dict(scope)
+                new_scope["path"] = path[4:] or "/"
+                await CURATED_MCP.streamable_http_app()(new_scope, receive, send)
+                return
 
-        # Handle curated MCP SSE endpoint: /mcp/sse/...
-        if path.startswith("/mcp/sse"):
-            new_scope = dict(scope)
-            new_scope["path"] = path[8:] or "/"
-            await CURATED_MCP.sse_app()(new_scope, receive, send)
-            return
-
-        if path.startswith("/mcp"):
-            new_scope = dict(scope)
-            new_scope["path"] = path[4:] or "/"
-            await CURATED_MCP.streamable_http_app()(new_scope, receive, send)
-            return
-
-        await self.app(scope, receive, send)
+            await self.app(scope, receive, send)
+        finally:
+            set_current_auth_context(None)
 
 
 # Build routes - only JSON API endpoints
