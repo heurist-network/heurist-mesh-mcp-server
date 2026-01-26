@@ -18,10 +18,17 @@ A Model Context Protocol (MCP) server that connects to [Heurist Mesh](https://gi
 - Use one API key to access multiple services (CoinGecko, DexScreener, Twitter analytics, and more)
 
 ## 🔥 Just In: Customize Your Agents and Create Managed MCP Servers On-Demand
-You can use [Heurist Mesh MCP Portal](https://mcp.heurist.ai/) to create SSE MCP Servers. Select your agents and compose a personalized swarm for your tasks!
+You can use [Heurist Mesh Console](https://mesh.heurist.ai/console) to create SSE MCP Servers. Select your agents and compose a personalized swarm for your tasks!
 
 ## Hosted SSE Endpoint
-We provide a hosted SSE endpoint at https://mesh.heurist.xyz/mcp/sse. This includes tools from recommended agents for comprehensive Web3 intelligence:
+We provide a hosted SSE endpoint at https://mesh.heurist.xyz/mcp/sse. **Authentication is required** - you need a [Heurist API key](https://dev-api-form.heurist.ai/) (use invite code "claude" for free credits).
+
+Provide your API key via:
+- `X-HEURIST-API-KEY` header (recommended)
+- `Authorization: Bearer <your-api-key>` header
+- `api_key` query parameter
+
+This endpoint includes tools from recommended agents for comprehensive Web3 intelligence:
 
 | Agent | Description |
 |-------|-------------|
@@ -33,7 +40,7 @@ We provide a hosted SSE endpoint at https://mesh.heurist.xyz/mcp/sse. This inclu
 | `AIXBTProjectInfoAgent` | Trending project info, fundamental analysis, and market summary |
 | `ZerionWalletAnalysisAgent` | EVM wallet token and NFT holdings analysis |
 
-This is a shared server and the performance may be unstable. For production use, we recommend self-hosting or using [Heurist Mesh MCP Portal](https://mcp.heurist.ai/) to create dedicated servers.
+This is a shared server and the performance may be unstable. For production use, we recommend self-hosting or using [Heurist Mesh Console](https://mesh.heurist.ai/console) to create dedicated servers.
 
 Cursor can directly access SSE servers. For Claude Desktop users, we recommend installing [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy) to connect to the SSE server.
 
@@ -125,7 +132,7 @@ docker run -p 8000:8000 -e PORT=8000 mesh-tool-server
 Then, in Cursor, add the MCP Server URL: **http://0.0.0.0:8000/sse**
 
 ## Available Tools
-Visit https://mesh.heurist.ai/metadata.json or https://mcp.heurist.ai/ to view all 30+ available agents and their tools.
+Visit https://mesh.heurist.ai/metadata.json or https://mesh.heurist.ai/console to view all 30+ available agents and their tools.
 
 ## Recommended Tools
 These tools from our recommended agents cover most Web3 intelligence use cases:
