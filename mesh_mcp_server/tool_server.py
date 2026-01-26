@@ -33,7 +33,7 @@ class Config:
     # API endpoints and authentication
     HEURIST_API_KEY = os.environ.get("HEURIST_API_KEY")
     HEURIST_API_ENDPOINT = os.getenv(
-        "MESH_API_ENDPOINT", "https://sequencer-v2.heurist.xyz"
+        "MESH_API_ENDPOINT", "https://mesh.heurist.xyz"
     )
     HEURIST_METADATA_ENDPOINT = os.getenv(
         "MESH_METADATA_ENDPOINT", "https://mesh.heurist.ai/mesh_agents_metadata.json"

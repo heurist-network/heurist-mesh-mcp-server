@@ -47,20 +47,19 @@ logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.CRITICAL)
 logging.getLogger("mcp").setLevel(logging.CRITICAL)
 logging.getLogger("anyio").setLevel(logging.CRITICAL)
 
-MESH_API_ENDPOINT = os.getenv("MESH_API_ENDPOINT", "https://sequencer-v2.heurist.xyz")
+MESH_API_ENDPOINT = os.getenv("MESH_API_ENDPOINT", "https://mesh.heurist.xyz")
 MESH_METADATA_ENDPOINT = os.getenv(
     "MESH_METADATA_ENDPOINT", "https://mesh.heurist.ai/metadata.json"
 )
 
 CURATED_AGENTS = [
-    "CoinGeckoTokenInfoAgent",
-    "ElfaTwitterIntelligenceAgent",
-    "ExaSearchAgent",
-    "FirecrawlSearchAgent",
-    "ZerionWalletAnalysisAgent",
-    "DexScreenerTokenInfoAgent",
+    "TokenResolverAgent",
     "TrendingTokenAgent",
+    "TwitterIntelligenceAgent",
+    "ExaSearchDigestAgent",
+    "FundingRateAgent",
     "AIXBTProjectInfoAgent",
+    "ZerionWalletAnalysisAgent",
 ]
 
 METADATA_REFRESH_INTERVAL = int(os.getenv("METADATA_REFRESH_INTERVAL", "600"))

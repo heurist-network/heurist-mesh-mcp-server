@@ -1,60 +1,35 @@
 {
     "agents": {
-        "CoinGeckoTokenInfoAgent": [
-            "get_categories_list",
-            "get_category_data",
-            "get_token_info",
-            "get_token_price_multi",
-            "get_tokens_by_category",
-            "get_trending_coins"
+        "TokenResolverAgent": [
+            "token_search",
+            "token_profile"
         ],
-        "DexScreenerTokenInfoAgent": [
-            "get_specific_pair_info",
-            "get_token_pairs",
-            "search_pairs"
-        ],
-        "ElfaTwitterIntelligenceAgent": [
+        "TrendingTokenAgent": [
             "get_trending_tokens",
-            "search_account",
-            "search_mentions"
+            "get_market_summary"
         ],
-        "FirecrawlSearchDigestAgent": [
-            "firecrawl_extract_web_data",
-            "firecrawl_web_search",
-            "firecrawl_scrape_url"
+        "TwitterIntelligenceAgent": [
+            "user_timeline",
+            "tweet_detail",
+            "twitter_search"
         ],
-        "TwitterInfoAgent": [
-            "get_user_tweets",
-            "get_twitter_detail",
-            "get_general_search"
+        "ExaSearchDigestAgent": [
+            "exa_web_search",
+            "exa_scrape_url"
         ],
         "FundingRateAgent": [
             "get_all_funding_rates",
             "get_symbol_funding_rates",
+            "get_symbol_oi_and_funding",
             "find_spot_futures_opportunities"
         ],
         "AIXBTProjectInfoAgent": [
             "search_projects",
             "get_market_summary"
         ],
-        "PondWalletAnalysisAgent": [
-            "analyze_ethereum_wallet",
-            "analyze_base_wallet"
-        ],
-        "BitquerySolanaTokenInfoAgent": [
-            "get_top_trending_tokens",
-            "query_token_holders",
-            "query_top_traders"
-        ],
-        "PumpFunTokenAgent": [
-            "query_latest_graduated_tokens"
-        ],
-        "UnifaiTokenAnalysisAgent": [
-            "get_gmgn_trend",
-            "get_gmgn_token_info"
-        ],
-        "EvmTokenInfoAgent": [
-            "get_recent_large_trades"
+        "ZerionWalletAnalysisAgent": [
+            "fetch_wallet_tokens",
+            "fetch_wallet_nfts"
         ]
     }
 }
