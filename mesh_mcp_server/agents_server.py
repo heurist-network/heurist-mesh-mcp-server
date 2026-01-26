@@ -404,11 +404,13 @@ def create_curated_mcp(
 
 CURATED_MCP: FastMCP = None
 AGENT_MCPS: dict[str, FastMCP] = {}
+# Store the exit stack so we it start new session managers when rebuilding
+_SESSION_STACK: Optional[contextlib.AsyncExitStack] = None
 
 
 async def rebuild_mcp_servers():
     """Rebuild all MCP servers with current metadata."""
-    global CURATED_MCP, AGENT_MCPS
+    global CURATED_MCP, AGENT_MCPS, _SESSION_STACK
 
     metadata = METADATA_MANAGER.metadata
     if not metadata:
@@ -426,6 +428,18 @@ async def rebuild_mcp_servers():
         if agent_meta.get("hidden", False):
             continue
         new_agent_mcps[agent_id] = create_single_agent_mcp(agent_id, agent_metadata)
+
+    # Initialize streamable_http_app for new MCPs (creates session managers)
+    new_curated.streamable_http_app()
+    for agent_mcp in new_agent_mcps.values():
+        agent_mcp.streamable_http_app()
+
+    if _SESSION_STACK is not None:
+        await _SESSION_STACK.enter_async_context(new_curated.session_manager.run())
+        for agent_mcp in new_agent_mcps.values():
+            await _SESSION_STACK.enter_async_context(agent_mcp.session_manager.run())
+        logger.info("Started session managers for rebuilt MCP servers")
+
     CURATED_MCP = new_curated
     AGENT_MCPS = new_agent_mcps
 
@@ -568,6 +582,8 @@ async def list_agents(request):
 @contextlib.asynccontextmanager
 async def lifespan(app: Starlette):
     """Manage lifespan of all MCP servers and background tasks."""
+    global _SESSION_STACK
+
     refresh_task = asyncio.create_task(METADATA_MANAGER.start_refresh_loop())
     logger.info(
         f"Started metadata refresh background task "
@@ -579,6 +595,8 @@ async def lifespan(app: Starlette):
         agent_mcp.streamable_http_app()
 
     async with contextlib.AsyncExitStack() as stack:
+        _SESSION_STACK = stack
+
         await stack.enter_async_context(CURATED_MCP.session_manager.run())
         for agent_mcp in AGENT_MCPS.values():
             await stack.enter_async_context(agent_mcp.session_manager.run())
@@ -586,6 +604,7 @@ async def lifespan(app: Starlette):
         yield
 
     # Cleanup
+    _SESSION_STACK = None
     refresh_task.cancel()
     try:
         await refresh_task
