@@ -27,6 +27,7 @@ from .auth import (
     get_validator,
     set_current_auth_context,
 )
+from .usage_tracker import record_usage
 
 load_dotenv()
 
@@ -204,6 +205,7 @@ async def call_mesh_api(
         logger.info(
             f"Deducted {credit_cost} credits from {auth_ctx.user_id} for {agent_id}"
         )
+        asyncio.create_task(record_usage(auth_ctx.user_id, agent_id, credit_cost))
 
     async with aiohttp.ClientSession() as session:
         url = f"{MESH_API_ENDPOINT}/mesh_request"
