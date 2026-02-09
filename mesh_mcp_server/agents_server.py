@@ -647,14 +647,25 @@ class DynamicMCPMiddleware:
                     await response(scope, receive, send)
                     return
 
-                # Health check support: non-GET on /sse returns 200 OK
-                # (8004scan and other monitors probe with POST/HEAD)
-                if use_sse and scope.get("method", "GET") != "GET":
+                # Health check support: return 200 for probes that would otherwise fail
+                # - non-GET on /sse (SSE only accepts GET)
+                # - GET on streamable HTTP without Accept: text/event-stream
+                method = scope.get("method", "GET")
+                if use_sse and method != "GET":
                     response = JSONResponse(
                         {"status": "ok", "agent": agent_id, "transport": "sse"}
                     )
                     await response(scope, receive, send)
                     return
+
+                if not use_sse and method == "GET":
+                    accept = self._get_header(scope, "accept") or ""
+                    if "text/event-stream" not in accept:
+                        response = JSONResponse(
+                            {"status": "ok", "agent": agent_id, "transport": "streamable-http"}
+                        )
+                        await response(scope, receive, send)
+                        return
 
                 mcp = AGENT_MCPS[agent_id]
                 new_scope = dict(scope)
