@@ -647,6 +647,15 @@ class DynamicMCPMiddleware:
                     await response(scope, receive, send)
                     return
 
+                # Health check support: non-GET on /sse returns 200 OK
+                # (8004scan and other monitors probe with POST/HEAD)
+                if use_sse and scope.get("method", "GET") != "GET":
+                    response = JSONResponse(
+                        {"status": "ok", "agent": agent_id, "transport": "sse"}
+                    )
+                    await response(scope, receive, send)
+                    return
+
                 mcp = AGENT_MCPS[agent_id]
                 new_scope = dict(scope)
                 new_scope["path"] = remaining
