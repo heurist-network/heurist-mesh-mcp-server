@@ -10,6 +10,8 @@ A Model Context Protocol (MCP) server that connects to [Heurist Mesh](https://gi
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@heurist-network/heurist-mesh-mcp-server/badge" alt="Mesh Agent Server MCP server" />
 </a>
 
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/heurist-network/heurist-mesh-mcp-server)](https://archestra.ai/mcp-catalog/heurist-network__heurist-mesh-mcp-server)
+
 ## Features
 - **Gateway to Web3 Intelligence**: Access 30+ specialized crypto analytics agents via MCP
 - **Optimized for AI**: Input/output formats optimized for AI agents - fewer tool calls, less token usage
