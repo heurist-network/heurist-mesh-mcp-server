@@ -60,6 +60,13 @@ CURATED_AGENTS = [
     "ZerionWalletAnalysisAgent",
 ]
 
+FINANCE_AGENTS = [
+    "FredMacroAgent",
+    "SecEdgarAgent",
+    "YahooFinanceAgent",
+    "ExaSearchDigestAgent",
+]
+
 METADATA_REFRESH_INTERVAL = int(os.getenv("METADATA_REFRESH_INTERVAL", "600"))
 
 # Transport security settings - disable DNS rebinding protection since we're behind nginx
@@ -328,12 +335,12 @@ def create_single_agent_mcp(agent_id: str, metadata: dict[str, Any]) -> FastMCP:
     return mcp
 
 
-def create_curated_mcp(
-    agent_ids: list[str], all_metadata: dict[str, dict[str, Any]]
+def create_named_mcp(
+    name: str, agent_ids: list[str], all_metadata: dict[str, dict[str, Any]]
 ) -> FastMCP:
-    """Create an MCP server with all tools from curated agents."""
+    """Create a named MCP server with all tools from the given agents."""
     mcp = FastMCP(
-        name="mesh-curated-agents",
+        name=name,
         stateless_http=True,
         json_response=True,
         transport_security=TRANSPORT_SECURITY,
@@ -358,14 +365,15 @@ def create_curated_mcp(
 
 
 CURATED_MCP: FastMCP = None
+FINANCE_MCP: FastMCP = None
 AGENT_MCPS: dict[str, FastMCP] = {}
-# Store the exit stack so we it start new session managers when rebuilding
+# Store the exit stack so we can start new session managers when rebuilding
 _SESSION_STACK: Optional[contextlib.AsyncExitStack] = None
 
 
 async def rebuild_mcp_servers():
     """Rebuild all MCP servers with current metadata."""
-    global CURATED_MCP, AGENT_MCPS, _SESSION_STACK
+    global CURATED_MCP, FINANCE_MCP, AGENT_MCPS, _SESSION_STACK
 
     metadata = METADATA_MANAGER.metadata
     if not metadata:
@@ -374,7 +382,8 @@ async def rebuild_mcp_servers():
 
     logger.info("Rebuilding MCP servers with updated metadata...")
 
-    new_curated = create_curated_mcp(CURATED_AGENTS, metadata)
+    new_curated = create_named_mcp("mesh-curated-agents", CURATED_AGENTS, metadata)
+    new_finance = create_named_mcp("heurist-finance-agents", FINANCE_AGENTS, metadata)
     new_agent_mcps = {}
     for agent_id, agent_metadata in metadata.items():
         agent_meta = agent_metadata.get("metadata", {})
@@ -384,27 +393,31 @@ async def rebuild_mcp_servers():
 
     # Initialize streamable_http_app for new MCPs (creates session managers)
     new_curated.streamable_http_app()
+    new_finance.streamable_http_app()
     for agent_mcp in new_agent_mcps.values():
         agent_mcp.streamable_http_app()
 
     if _SESSION_STACK is not None:
         await _SESSION_STACK.enter_async_context(new_curated.session_manager.run())
+        await _SESSION_STACK.enter_async_context(new_finance.session_manager.run())
         for agent_mcp in new_agent_mcps.values():
             await _SESSION_STACK.enter_async_context(agent_mcp.session_manager.run())
         logger.info("Started session managers for rebuilt MCP servers")
 
     CURATED_MCP = new_curated
+    FINANCE_MCP = new_finance
     AGENT_MCPS = new_agent_mcps
 
     logger.info(
         f"Rebuilt MCP servers: curated={len(CURATED_AGENTS)} agents, "
+        f"finance={len(FINANCE_AGENTS)} agents, "
         f"individual={len(AGENT_MCPS)} agents"
     )
 
 
 def initialize_servers():
     """Initialize MCP servers at startup (synchronous)."""
-    global CURATED_MCP, AGENT_MCPS
+    global CURATED_MCP, FINANCE_MCP, AGENT_MCPS
 
     logger.info("Loading agent metadata at startup...")
     initial_metadata = fetch_agent_metadata_sync()
@@ -412,8 +425,11 @@ def initialize_servers():
     METADATA_MANAGER.last_refresh = time.time()
     logger.info(f"Loaded {len(initial_metadata)} agents")
 
-    CURATED_MCP = create_curated_mcp(CURATED_AGENTS, initial_metadata)
+    CURATED_MCP = create_named_mcp("mesh-curated-agents", CURATED_AGENTS, initial_metadata)
     logger.info(f"Created curated MCP server with {len(CURATED_AGENTS)} agents")
+
+    FINANCE_MCP = create_named_mcp("heurist-finance-agents", FINANCE_AGENTS, initial_metadata)
+    logger.info(f"Created finance MCP server with {len(FINANCE_AGENTS)} agents")
 
     AGENT_MCPS = {}
     for agent_id, metadata in initial_metadata.items():
@@ -517,6 +533,13 @@ async def list_agents(request):
                     "sse": f"{base_url}/mcp/sse",
                 },
             },
+            "heurist_finance_agents": {
+                "agents": FINANCE_AGENTS,
+                "endpoints": {
+                    "streamable_http": f"{base_url}/mcp/heurist-finance/",
+                    "sse": f"{base_url}/mcp/heurist-finance/sse",
+                },
+            },
             "all_agents": agents,
         }
     )
@@ -534,6 +557,7 @@ async def lifespan(app: Starlette):
     )
 
     CURATED_MCP.streamable_http_app()
+    FINANCE_MCP.streamable_http_app()
     for agent_mcp in AGENT_MCPS.values():
         agent_mcp.streamable_http_app()
 
@@ -541,6 +565,7 @@ async def lifespan(app: Starlette):
         _SESSION_STACK = stack
 
         await stack.enter_async_context(CURATED_MCP.session_manager.run())
+        await stack.enter_async_context(FINANCE_MCP.session_manager.run())
         for agent_mcp in AGENT_MCPS.values():
             await stack.enter_async_context(agent_mcp.session_manager.run())
         logger.info("All MCP session managers started")
@@ -647,18 +672,20 @@ class DynamicMCPMiddleware:
                     await response(scope, receive, send)
                     return
 
-                # Health check support: return 200 for probes that would otherwise fail
-                # - non-GET on /sse (SSE only accepts GET)
-                # - GET on streamable HTTP without Accept: text/event-stream
-                method = scope.get("method", "GET")
-                if use_sse and method != "GET":
+                # Health check support: non-GET on /sse returns 200 OK
+                # (SSE only accepts GET; monitors like 8004scan may probe with POST)
+                if use_sse and scope.get("method", "GET") != "GET":
                     response = JSONResponse(
                         {"status": "ok", "agent": agent_id, "transport": "sse"}
                     )
                     await response(scope, receive, send)
                     return
 
-                if not use_sse and method == "GET":
+                # Health check support: plain GET without Accept: text/event-stream
+                # returns 200 OK. The MCP Streamable HTTP transport requires this
+                # header for GET requests and rejects without it (406). Monitors
+                # like 8004scan probe with plain GET for health checks.
+                if not use_sse and scope.get("method", "GET") == "GET":
                     accept = self._get_header(scope, "accept") or ""
                     if "text/event-stream" not in accept:
                         response = JSONResponse(
@@ -675,6 +702,27 @@ class DynamicMCPMiddleware:
                 await mcp_app(new_scope, receive, send)
                 return
 
+            if path.startswith("/mcp/heurist-finance/sse"):
+                new_scope = dict(scope)
+                new_scope["path"] = path[len("/mcp/heurist-finance/sse"):] or "/"
+                await FINANCE_MCP.sse_app()(new_scope, receive, send)
+                return
+
+            if path.startswith("/mcp/heurist-finance"):
+                if scope.get("method", "GET") == "GET":
+                    accept = self._get_header(scope, "accept") or ""
+                    if "text/event-stream" not in accept:
+                        response = JSONResponse(
+                            {"status": "ok", "service": "Heurist Finance MCP", "transport": "streamable-http"}
+                        )
+                        await response(scope, receive, send)
+                        return
+
+                new_scope = dict(scope)
+                new_scope["path"] = path[len("/mcp/heurist-finance"):] or "/"
+                await FINANCE_MCP.streamable_http_app()(new_scope, receive, send)
+                return
+
             if path.startswith("/mcp/sse"):
                 new_scope = dict(scope)
                 new_scope["path"] = path[8:] or "/"
@@ -682,6 +730,15 @@ class DynamicMCPMiddleware:
                 return
 
             if path.startswith("/mcp"):
+                if scope.get("method", "GET") == "GET":
+                    accept = self._get_header(scope, "accept") or ""
+                    if "text/event-stream" not in accept:
+                        response = JSONResponse(
+                            {"status": "ok", "service": "Heurist Mesh MCP", "transport": "streamable-http"}
+                        )
+                        await response(scope, receive, send)
+                        return
+
                 new_scope = dict(scope)
                 new_scope["path"] = path[4:] or "/"
                 await CURATED_MCP.streamable_http_app()(new_scope, receive, send)
@@ -707,8 +764,8 @@ app = Starlette(
 
 logger.info(
     "Routes configured with dynamic MCP routing - "
-    "Curated: /mcp, /mcp/sse | Individual: /mcp/agents/<agent_id> | "
-    "API: /mcp/health, /mcp/agents, /mcp/refresh"
+    "Curated: /mcp, /mcp/sse | Finance: /mcp/heurist-finance, /mcp/heurist-finance/sse | "
+    "Individual: /mcp/agents/<agent_id> | API: /mcp/health, /mcp/agents, /mcp/refresh"
 )
 
 
