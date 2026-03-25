@@ -645,6 +645,18 @@ class DynamicMCPMiddleware:
 
         path = scope["path"]
 
+        # Workaround: some clients (e.g. Codex CLI) send Accept: */* or omit it,
+        # causing MCP SDK to return 406. Override with the required value.
+        accept = self._get_header(scope, "accept")
+        if path.startswith("/mcp") and (not accept or "application/json" not in accept):
+            scope = dict(scope)
+            headers = [
+                (k, v) for k, v in scope.get("headers", [])
+                if k.lower() != b"accept"
+            ]
+            headers.append((b"accept", b"application/json, text/event-stream"))
+            scope["headers"] = headers
+
         if path.startswith("/mcp") and not path.endswith("/"):
             if path not in self.API_ENDPOINTS:
                 path = path + "/"
