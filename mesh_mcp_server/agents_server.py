@@ -518,7 +518,7 @@ async def list_agents(request):
                 "name": agent_meta.get("name", agent_id),
                 "description": agent_meta.get("description", ""),
                 "endpoints": {
-                    "streamable_http": f"{base_url}/mcp/agents/{agent_id}/",
+                    "streamable_http": f"{base_url}/mcp/agents/{agent_id}",
                     "sse": f"{base_url}/mcp/agents/{agent_id}/sse",
                 },
             }
@@ -529,14 +529,14 @@ async def list_agents(request):
             "curated": {
                 "agents": CURATED_AGENTS,
                 "endpoints": {
-                    "streamable_http": f"{base_url}/mcp/",
+                    "streamable_http": f"{base_url}/mcp",
                     "sse": f"{base_url}/mcp/sse",
                 },
             },
             "heurist_finance_agents": {
                 "agents": FINANCE_AGENTS,
                 "endpoints": {
-                    "streamable_http": f"{base_url}/mcp/heurist-finance/",
+                    "streamable_http": f"{base_url}/mcp/heurist-finance",
                     "sse": f"{base_url}/mcp/heurist-finance/sse",
                 },
             },
