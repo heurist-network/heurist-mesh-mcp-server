@@ -17,6 +17,10 @@ A Model Context Protocol (MCP) server that connects to [Heurist Mesh](https://gi
 - Works with Claude, Cursor, Claude Desktop, and other MCP-compatible interfaces
 - Use one API key to access multiple services (CoinGecko, DexScreener, Twitter analytics, and more)
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/heurist-network-heurist-mesh-mcp-server).
+
 ## 🔥 Just In: Customize Your Agents and Create Managed MCP Servers On-Demand
 You can use [Heurist Mesh Console](https://mesh.heurist.ai/console) to create SSE MCP Servers. Select your agents and compose a personalized swarm for your tasks!
 
